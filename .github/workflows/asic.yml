@@ -1,0 +1,133 @@
+name: ASIC RTL-to-GDS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'rtl/**'
+      - 'asic/config.json'
+      - 'Makefile'
+      - '.github/workflows/asic.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'rtl/**'
+      - 'asic/config.json'
+      - 'Makefile'
+      - '.github/workflows/asic.yml'
+  workflow_dispatch:
+
+env:
+  OL_IMG: efabless/openlane:latest
+  PDK_COMMIT: bdc9412b3e468c102d01b7cf6337be06ec6e9c9a
+
+jobs:
+  # ── Fast lint & synthesis sanity check ──────────────────────
+  lint:
+    name: Lint & Yosys check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sv2v
+        run: |
+          curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
+            | tar xz --strip-components=1 -C /usr/local/bin
+
+      - name: Install Yosys
+        run: sudo apt-get update && sudo apt-get install -y yosys
+
+      - name: Convert SystemVerilog to Verilog
+        run: make sv2v
+
+      - name: Yosys synthesis check
+        run: make yosys-check
+
+  # ── Full RTL-to-GDS flow ────────────────────────────────────
+  gds:
+    name: OpenLane RTL-to-GDS
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sv2v
+        run: |
+          curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
+            | tar xz --strip-components=1 -C /usr/local/bin
+
+      - name: Convert SystemVerilog to Verilog
+        run: make sv2v
+
+      - name: Copy Verilog to ASIC design directory
+        run: |
+          mkdir -p asic/src
+          cp build/cpu_top.v asic/src/cpu_top.v
+
+      - name: Cache Sky130 PDK
+        id: cache-pdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.volare
+          key: sky130-pdk-${{ env.PDK_COMMIT }}
+
+      - name: Pull OpenLane Docker image
+        run: docker pull ${{ env.OL_IMG }}
+
+      - name: Fetch Sky130 PDK
+        if: steps.cache-pdk.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm \
+            -v $HOME/.volare:/root/.volare \
+            ${{ env.OL_IMG }} \
+            volare fetch --pdk sky130 ${{ env.PDK_COMMIT }}
+
+      - name: Run OpenLane flow
+        run: |
+          docker run --rm \
+            -v $HOME/.volare:/root/.volare \
+            -v ${{ github.workspace }}/asic:/design \
+            ${{ env.OL_IMG }} \
+            flow.tcl -design /design -tag run
+
+      - name: Print flow summary
+        if: always()
+        run: |
+          echo "=== Flow metrics ==="
+          cat asic/runs/run/reports/metrics.csv 2>/dev/null || echo "No metrics found"
+          echo ""
+          echo "=== Manufacturability ==="
+          cat asic/runs/run/reports/manufacturability.rpt 2>/dev/null || echo "No report found"
+
+      - name: Upload GDS artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu_top-gds
+          path: asic/runs/run/results/final/gds/cpu_top.gds
+          retention-days: 30
+
+      - name: Upload final design artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu_top-final
+          path: |
+            asic/runs/run/results/final/def/cpu_top.def
+            asic/runs/run/results/final/lef/cpu_top.lef
+            asic/runs/run/results/final/lib/cpu_top.lib
+            asic/runs/run/results/final/sdc/cpu_top.sdc
+            asic/runs/run/results/final/spi/lvs/cpu_top.spice
+            asic/runs/run/results/final/verilog/gl/cpu_top.nl.v
+          retention-days: 30
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu_top-reports
+          path: |
+            asic/runs/run/reports/**/*.rpt
+            asic/runs/run/reports/**/*.csv
+            asic/runs/run/openlane.log
+          retention-days: 14

@@ -22,7 +22,12 @@ xelab.pb
 xvlog.pb
 *.wdb
 
+# Build artifacts
+build/
 
+# ASIC flow (generated)
+asic/runs/
+asic/src/cpu_top.v
 
 # Reports (regenerable)
 reports/
