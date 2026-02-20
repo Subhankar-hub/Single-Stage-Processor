@@ -1,0 +1,6 @@
+<< properties >>
+string FIXED_BBOX 0 0 168833 170977
+string GDS_END 73460606
+string GDS_FILE /design/runs/run/results/signoff/cpu_top.magic.gds
+string GDS_START 1274574
+<< end >>

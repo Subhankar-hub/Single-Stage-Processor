@@ -1,0 +1,1 @@
+lvs {/design/runs/run/results/signoff/cpu_top.spice cpu_top} {/design/runs/run/tmp/signoff/42-cpu_top.pnl.v cpu_top} /root/.volare/volare/sky130/versions/bdc9412b3e468c102d01b7cf6337be06ec6e9c9a/sky130A/libs.tech/netgen/sky130A_setup.tcl /design/runs/run/logs/signoff/45-cpu_top.lef.lvs.log -json
