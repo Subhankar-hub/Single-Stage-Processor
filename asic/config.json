@@ -1,0 +1,26 @@
+{
+    "DESIGN_NAME": "cpu_top",
+    "VERILOG_FILES": "dir::src/cpu_top.v",
+    "CLOCK_PORT": "clk",
+    "CLOCK_PERIOD": 25.0,
+
+    "SYNTH_PARAMETERS": "IMEM_DEPTH=64 DMEM_DEPTH=64",
+
+    "FP_CORE_UTIL": 30,
+    "FP_IO_HLENGTH": 2,
+    "FP_IO_VLENGTH": 2,
+
+    "PL_TARGET_DENSITY": 0.45,
+    "GPL_CELL_PADDING": 2,
+    "DPL_CELL_PADDING": 2,
+
+    "RUN_HEURISTIC_DIODE_INSERTION": true,
+    "GRT_REPAIR_ANTENNAS": true,
+    "DIODE_ON_PORTS": "in",
+
+    "RUN_CTS": true,
+
+    "QUIT_ON_TIMING_VIOLATIONS": false,
+    "QUIT_ON_SETUP_VIOLATIONS": false,
+    "QUIT_ON_HOLD_VIOLATIONS": false
+}
