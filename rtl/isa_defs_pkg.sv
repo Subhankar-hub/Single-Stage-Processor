@@ -1,12 +1,9 @@
-// rtl/isa_defs.sv
+// rtl/isa_defs_pkg.sv
 // Package: ISA definitions, opcodes, field extraction helpers
 
 `timescale 1ns / 1ps
 package isa_defs_pkg;
-  // Opcode width and positions
   localparam int OPCODE_W = 6;
-  localparam int OPCODE_MSB = 31;
-  localparam int OPCODE_LSB = 26;
 
   // Register address width and count
   localparam int REG_ADDR_W = 3;
@@ -51,7 +48,8 @@ package isa_defs_pkg;
   localparam int INS_I_IMM_MSB = 19;
   localparam int INS_I_IMM_LSB = 4;
 
-  // Field extraction functions
+  // Field extraction functions — each uses only a bit-slice of instr
+  /* verilator lint_off UNUSEDSIGNAL */
   function automatic logic [OPCODE_W-1:0] get_opcode(logic [31:0] instr);
     get_opcode = instr[INS_OPCODE_MSB:INS_OPCODE_LSB];
   endfunction
@@ -79,5 +77,6 @@ package isa_defs_pkg;
   function automatic logic signed [IMM_W-1:0] get_itype_imm16(logic [31:0] instr);
     get_itype_imm16 = instr[INS_I_IMM_MSB:INS_I_IMM_LSB];
   endfunction
+  /* verilator lint_on UNUSEDSIGNAL */
 
 endpackage : isa_defs_pkg

@@ -50,17 +50,21 @@ module cpu_top #(
   assign current_instr = instr;
 
   // Control decode
-  logic is_rtype, is_itype, is_nop;
+  logic is_itype;
   isa_defs_pkg::alu_op_e alu_op;
   logic reg_write_en, mem_read, mem_write;
   logic [REG_ADDR_W-1:0] rd_addr, rs1_addr, rs2_addr;
   logic signed [IMM_W-1:0] imm16;
 
+  /* verilator lint_off UNUSEDSIGNAL */
+  logic unused_is_rtype, unused_is_nop;
+  /* verilator lint_on UNUSEDSIGNAL */
+
   control_unit cu (
     .instr(instr),
-    .is_rtype(is_rtype),
+    .is_rtype(unused_is_rtype),
     .is_itype(is_itype),
-    .is_nop(is_nop),
+    .is_nop(unused_is_nop),
     .alu_op(alu_op),
     .reg_write_en(reg_write_en),
     .mem_read(mem_read),

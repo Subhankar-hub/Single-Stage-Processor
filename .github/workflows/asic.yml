@@ -16,26 +16,32 @@ on:
       - 'Makefile'
       - '.github/workflows/asic.yml'
   workflow_dispatch:
+    inputs:
+      pdk:
+        description: 'PDK variant (sky130A, gf180mcuD, etc.)'
+        required: false
+        default: 'sky130A'
 
 env:
-  OL_IMG: efabless/openlane:latest
-  PDK_COMMIT: bdc9412b3e468c102d01b7cf6337be06ec6e9c9a
+  OPENLANE_VERSION: "2.3.9"
+  OPDKS_REV: "0fe599b2afb6708d281543108caf8310912f54af"
+  PDK: ${{ github.event.inputs.pdk || 'sky130A' }}
 
 jobs:
-  # ── Fast lint & synthesis sanity check ──────────────────────
   lint:
     name: Lint & Yosys check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install sv2v
+      - name: Install tools
         run: |
+          sudo apt-get update && sudo apt-get install -y yosys verilator
           curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
             | tar xz --strip-components=1 -C /usr/local/bin
 
-      - name: Install Yosys
-        run: sudo apt-get update && sudo apt-get install -y yosys
+      - name: Lint
+        run: make lint
 
       - name: Convert SystemVerilog to Verilog
         run: make sv2v
@@ -43,18 +49,58 @@ jobs:
       - name: Yosys synthesis check
         run: make yosys-check
 
-  # ── Full RTL-to-GDS flow ────────────────────────────────────
   gds:
-    name: OpenLane RTL-to-GDS
+    name: "OpenLane 2 RTL-to-GDS (${{ github.event.inputs.pdk || 'sky130A' }})"
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up Python venv & install OpenLane
+        run: |
+          uv venv .venv --python 3.12
+          uv pip install openlane==${{ env.OPENLANE_VERSION }} --python .venv/bin/python
+
       - name: Install sv2v
         run: |
           curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
             | tar xz --strip-components=1 -C /usr/local/bin
+
+      - name: Resolve PDK family for volare
+        id: pdk-family
+        run: |
+          pdk="${{ env.PDK }}"
+          if [[ "$pdk" == sky130* ]]; then
+            echo "family=sky130" >> "$GITHUB_OUTPUT"
+          elif [[ "$pdk" == gf180mcu* ]]; then
+            echo "family=gf180mcu" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Unknown PDK variant: $pdk"
+            exit 1
+          fi
+
+      - name: Cache PDK
+        id: cache-pdk
+        uses: actions/cache@v4
+        with:
+          path: .pdk_root
+          key: ${{ steps.pdk-family.outputs.family }}-pdk-${{ env.OPDKS_REV }}
+
+      - name: Fetch PDK via volare
+        if: steps.cache-pdk.outputs.cache-hit != 'true'
+        run: |
+          .venv/bin/volare enable \
+            --pdk ${{ steps.pdk-family.outputs.family }} \
+            --pdk-root .pdk_root \
+            ${{ env.OPDKS_REV }}
 
       - name: Convert SystemVerilog to Verilog
         run: make sv2v
@@ -64,31 +110,14 @@ jobs:
           mkdir -p asic/src
           cp build/cpu_top.v asic/src/cpu_top.v
 
-      - name: Cache Sky130 PDK
-        id: cache-pdk
-        uses: actions/cache@v4
-        with:
-          path: ~/.volare
-          key: sky130-pdk-${{ env.PDK_COMMIT }}
-
-      - name: Pull OpenLane Docker image
-        run: docker pull ${{ env.OL_IMG }}
-
-      - name: Fetch Sky130 PDK
-        if: steps.cache-pdk.outputs.cache-hit != 'true'
+      - name: Run OpenLane 2 flow
         run: |
-          docker run --rm \
-            -v $HOME/.volare:/root/.volare \
-            ${{ env.OL_IMG }} \
-            volare fetch --pdk sky130 ${{ env.PDK_COMMIT }}
-
-      - name: Run OpenLane flow
-        run: |
-          docker run --rm \
-            -v $HOME/.volare:/root/.volare \
-            -v ${{ github.workspace }}/asic:/design \
-            ${{ env.OL_IMG }} \
-            flow.tcl -design /design -tag run
+          .venv/bin/openlane \
+            --manual-pdk \
+            --pdk-root .pdk_root \
+            -p ${{ env.PDK }} \
+            --run-tag run \
+            asic/config.json
 
       - name: Print flow summary
         if: always()
@@ -103,7 +132,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: cpu_top-gds
+          name: cpu_top-gds-${{ env.PDK }}
           path: asic/runs/run/results/final/gds/cpu_top.gds
           retention-days: 30
 
@@ -111,7 +140,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: cpu_top-final
+          name: cpu_top-final-${{ env.PDK }}
           path: |
             asic/runs/run/results/final/def/cpu_top.def
             asic/runs/run/results/final/lef/cpu_top.lef
@@ -125,7 +154,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cpu_top-reports
+          name: cpu_top-reports-${{ env.PDK }}
           path: |
             asic/runs/run/reports/**/*.rpt
             asic/runs/run/reports/**/*.csv

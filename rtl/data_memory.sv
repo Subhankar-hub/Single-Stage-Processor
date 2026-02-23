@@ -22,14 +22,11 @@ module data_memory #(
   logic [31:0] mem [0:DEPTH-1];
 
   always_comb begin
-    if (cpu_addr < DEPTH)
-      cpu_rdata = mem[cpu_addr];
-    else
-      cpu_rdata = 32'h00000000;
+    cpu_rdata = mem[cpu_addr];
   end
 
   always_comb begin
-    if (tb_re && (tb_addr < DEPTH))
+    if (tb_re)
       tb_rdata = mem[tb_addr];
     else
       tb_rdata = 32'h00000000;
@@ -39,9 +36,9 @@ module data_memory #(
     if (!rst_n) begin
       // keep contents unchanged on reset
     end else begin
-      if (cpu_we && (cpu_addr < DEPTH)) begin
+      if (cpu_we) begin
         mem[cpu_addr] <= cpu_wdata;
-      end else if (tb_we && (tb_addr < DEPTH)) begin
+      end else if (tb_we) begin
         mem[tb_addr] <= tb_wdata;
       end
     end

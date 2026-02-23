@@ -1,6 +1,6 @@
 # Single-Stage (Single-Cycle) Processor
 
-A 32-bit single-cycle CPU written in SystemVerilog, targeting both **FPGA** (Xilinx Vivado / Kintex-7) and **ASIC** (Sky130 via OpenLane) flows.
+A 32-bit single-cycle CPU written in SystemVerilog, targeting **ASIC** flows with OpenLane 2 and open-source PDKs (Sky130, GF180MCU).
 
 ## CPU Microarchitecture
 
@@ -87,36 +87,17 @@ packet-beta
 | LOAD   | `000100` | `rd = dmem[rs1 + sign_ext(imm16)]` |
 | STORE  | `000101` | `dmem[rs1 + sign_ext(imm16)] = rs2` |
 
-## Design Flows
-
-### FPGA Flow
-
-```mermaid
-flowchart LR
-    RTL["RTL<br/>(SystemVerilog)"] --> SYNTH["Vivado<br/>Synthesis"]
-    SYNTH --> IMPL["Place &<br/>Route"]
-    IMPL --> BIT["Bitstream<br/>(.bit)"]
-    BIT --> FPGA["Kintex-7<br/>FPGA"]
-
-    RTL --> SIM["XSim + UVM<br/>Simulation"]
-    SIM --> WAVE["Waveforms"]
-
-    style RTL fill:#4a90d9,color:#fff
-    style BIT fill:#2ecc71,color:#fff
-    style SIM fill:#9b59b6,color:#fff
-```
-
-### ASIC Flow (RTL-to-GDS)
+## ASIC Flow (RTL-to-GDS)
 
 ```mermaid
 flowchart LR
     SV["RTL<br/>(SystemVerilog)"] --> SV2V["sv2v"]
     SV2V --> V["Verilog<br/>(.v)"]
-    V --> OL["OpenLane (Docker)"]
+    V --> OL["OpenLane 2"]
 
-    subgraph OL["OpenLane Flow"]
+    subgraph OL["OpenLane 2 Classic Flow"]
         direction TB
-        YS["Yosys<br/>Synthesis"] --> FP["Floorplan"]
+        YS["Yosys<br/>Synthesis"] --> FP["Floorplan +<br/>PDN"]
         FP --> GPL["Global<br/>Placement"]
         GPL --> DPL["Detailed<br/>Placement"]
         DPL --> CTS["Clock Tree<br/>Synthesis"]
@@ -132,125 +113,100 @@ flowchart LR
     style GDS fill:#2ecc71,color:#fff
 ```
 
-### UVM Testbench Architecture
-
-```mermaid
-flowchart TB
-    subgraph TEST["UVM Test (directed / random)"]
-        direction TB
-        TB_TEST["cpu_test_base"]
-    end
-
-    subgraph ENV["cpu_env"]
-        direction TB
-        subgraph AGENT["cpu_agent"]
-            DRV["cpu_driver"] --- MON["cpu_monitor"]
-        end
-        SB["cpu_scoreboard<br/>(reference model)"]
-    end
-
-    TEST --> ENV
-    MON -->|"cpu_trans<br/>(analysis port)"| SB
-    DRV <-->|"cpu_if<br/>(virtual interface)"| DUT["cpu_top<br/>(DUT)"]
-    MON <-->|"cpu_if"| DUT
-
-    style DUT fill:#e74c3c,color:#fff
-    style SB fill:#f39c12,color:#fff
-    style TEST fill:#9b59b6,color:#fff
-```
-
 ## Project Structure
 
 ```
 .
-├── Makefile                  # All build/sim/ASIC targets
+├── Makefile                    # ASIC build/sim/lint targets
 ├── rtl/
-│   ├── isa_defs.sv           # ISA package (opcodes, field extraction)
-│   ├── alu.sv                # ALU (ADD/SUB)
-│   ├── regfile.sv            # 8x32 register file
-│   ├── control_unit.sv       # Instruction decoder
-│   ├── instruction_memory.sv # IMEM (with TB write port)
-│   ├── data_memory.sv        # DMEM (with TB read/write ports)
-│   └── cpu_top.sv            # Top-level CPU
+│   ├── isa_defs_pkg.sv         # ISA package (opcodes, field extraction)
+│   ├── alu.sv                  # ALU (ADD/SUB)
+│   ├── regfile.sv              # 8x32 register file
+│   ├── control_unit.sv         # Instruction decoder
+│   ├── instruction_memory.sv   # IMEM (with TB write port)
+│   ├── data_memory.sv          # DMEM (with TB read/write ports)
+│   └── cpu_top.sv              # Top-level CPU
 ├── tb/
-│   ├── top_tb.sv             # Top testbench (clock, reset, UVM entry)
-│   └── uvm/                  # UVM verification environment
-├── scripts/                  # Vivado TCL scripts
+│   └── top_tb.sv               # Top testbench
 ├── asic/
-│   ├── config.json           # OpenLane configuration (Sky130)
-│   ├── src/                  # sv2v-converted Verilog (generated)
-│   └── runs/                 # OpenLane run outputs
-│       └── run/results/final/
-│           └── gds/cpu_top.gds
+│   ├── config.json             # OpenLane 2 configuration
+│   ├── src/                    # sv2v-converted Verilog (generated)
+│   └── runs/                   # OpenLane run outputs
 └── sim/
-    └── program.hex           # Optional preload program
+    └── program.hex             # Optional preload program
 ```
 
 ## Prerequisites
 
 | Tool | Used for |
 |------|----------|
-| **Vivado 2025.2** | FPGA synthesis, implementation, simulation (XSim) |
+| **OpenLane 2.3.9** | ASIC RTL-to-GDS flow (local install) |
+| **Sky130 / GF180MCU PDK** | Process design kits (via volare) |
+| **sv2v** | SystemVerilog-to-Verilog conversion |
 | **Yosys** | Local synthesis sanity check |
-| **sv2v** | SystemVerilog-to-Verilog conversion for ASIC tools |
 | **Verilator** | RTL linting |
 | **Icarus Verilog** | Open-source simulation |
-| **GTKWave** | Waveform viewing |
-| **Docker** | Runs OpenLane for RTL-to-GDS |
+| **KLayout** | GDS viewing |
 
 ## Quick Start
 
-### FPGA Flow (Vivado)
+### ASIC Flow (OpenLane 2)
+
+The Makefile uses a local OpenLane 2 install with PDK selectable via `PDK=`:
 
 ```bash
-make project          # Create Vivado project (Kintex-7 xc7k70tfbv676-1)
-make sim              # Run behavioural simulation (XSim + UVM)
-make synth            # Run synthesis (reports in reports/)
-make impl             # Run implementation / place & route
-make bitstream        # Generate bitstream
-make gui              # Open project in Vivado GUI
+# Default PDK is sky130A — override with PDK=<variant>
+# Valid: sky130A, sky130B, gf180mcuA, gf180mcuB, gf180mcuC, gf180mcuD
+
+make synth                     # Synthesis + STA pre-PNR
+make floorplan                 # Synthesis → Floorplan + PDN
+make placement                 # Synthesis → Detailed placement
+make cts                       # Synthesis → Clock tree synthesis
+make routing                   # Synthesis → Detailed routing
+make gds                       # Full RTL-to-GDS (default target)
+make gds PDK=gf180mcuD         # Full flow with GF180MCU
+
+make gds-view                  # Open final GDS in KLayout
+
+make report-synth              # View synthesis timing reports
+make report-cts                # View CTS timing reports
+make report-routing            # View routing timing reports
+make report-timing             # View signoff STA reports
 ```
 
-### ASIC Flow (OpenLane + Sky130)
+Each stage target is cumulative — it runs all prior stages up to that point. Use `TAG=<name>` to manage multiple runs:
 
 ```bash
-make gds-setup        # One-time: pull Docker image + fetch Sky130 PDK
-make yosys-check      # Quick local synthesis sanity check
-make gds              # Full RTL-to-GDS (synthesis -> floorplan -> PnR -> DRC -> GDS)
-make gds-view         # Open GDS in KLayout
+make cts PDK=sky130A TAG=experiment1
 ```
 
-The ASIC flow uses 64-entry memories (parameterised down from 1024) so they synthesise as flip-flop arrays. A production design would replace these with SRAM macros (e.g. via OpenRAM).
-
-### Open-Source Simulation & Lint
+### Preparation & Simulation
 
 ```bash
-make lint             # Verilator lint check
-make iverilog-sim     # Compile & run with Icarus Verilog
+make sv2v                      # Convert SystemVerilog to Verilog
+make yosys-check               # Quick Yosys synthesis sanity check
+make lint                      # Verilator lint check
+make iverilog-sim              # Compile & run with Icarus Verilog
 ```
 
 ### Cleanup
 
 ```bash
-make clean            # Remove all generated files
-make gds-clean        # Remove only ASIC run outputs
+make gds-clean                 # Remove ASIC run outputs
+make clean                     # Remove all generated files
 ```
 
 ## Target Platforms
 
-### FPGA
+| Parameter | Value |
+|-----------|-------|
+| **PDKs** | SkyWater Sky130 (130 nm), GlobalFoundries GF180MCU (180 nm) |
+| **Clock** | 40 MHz (25 ns period) |
+| **Flow** | OpenLane 2.3.9 (Classic) — local install, no Docker |
+| **Output** | `asic/runs/<tag>/results/final/gds/cpu_top.gds` |
 
-- **Device**: Xilinx Kintex-7 `xc7k70tfbv676-1`
-- **Clock**: 100 MHz (10 ns period)
-
-### ASIC
-
-- **PDK**: SkyWater Sky130A (130 nm, open-source)
-- **Clock**: 40 MHz (25 ns period)
-- **Standard cell library**: `sky130_fd_sc_hd`
-- **Flow**: OpenLane v1.1.1 (classic) via Docker
-- **Output**: `asic/runs/run/results/final/gds/cpu_top.gds`
+The ASIC flow uses 64-entry memories (parameterised down from 1024) so they synthesise as flip-flop arrays. A production design would replace these with SRAM macros (e.g. via OpenRAM).
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE). The Sky130 PDK is separately licensed under Apache 2.0 by Google/SkyWater.
+Licensed under the [Apache License 2.0](LICENSE). The Sky130 PDK is separately licensed under Apache 2.0 by Google/SkyWater. The GF180MCU PDK is licensed under Apache 2.0 by GlobalFoundries.

@@ -1,5 +1,0 @@
-Warning: Replacing memory \mem with list of registers. See /design/src/cpu_top.v:277
-Warning: Replacing memory \regs with list of registers. See /design/src/cpu_top.v:55
-Warning: Replacing memory \mem with list of registers. See /design/src/cpu_top.v:227
-ABC: Warning: Detected 2 multi-output gates (for example, "sky130_fd_sc_hd__fa_1").
-Warnings: 3 unique messages, 3 total

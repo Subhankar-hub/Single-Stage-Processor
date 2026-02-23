@@ -1,118 +1,185 @@
-VIVADO  ?= vivado
-PROJ    := one_stage_cpu
-DEVICE  := xc7k70tfbv676-1
+# ══════════════════════════════════════════════════
+#  Single-Stage RISC-V Processor — ASIC Makefile
+# ══════════════════════════════════════════════════
+#
+#  Usage:
+#    make gds                        # full RTL-to-GDS (sky130A default)
+#    make gds PDK=gf180mcuD          # full flow with GF180
+#    make synth PDK=sky130A          # synthesis only
+#    make floorplan                  # up to floorplan + PDN
+#    make help                       # show all targets
+#
+#  Valid PDK values:
+#    sky130A  sky130B
+#    gf180mcuA  gf180mcuB  gf180mcuC  gf180mcuD
 
-# OpenLane (classic) Docker image
-OL_IMG := efabless/openlane:latest
+# ── User-configurable variables ──────────────────
+PDK        ?= sky130A
+PDK_ROOT   ?= /home/smith/asic/pdks
+OPENLANE   := /home/smith/asic/bin/openlane
+TAG        ?= run
 
-# RTL source list (order matters: package first)
-RTL_SRC := rtl/isa_defs.sv rtl/alu.sv rtl/regfile.sv \
+# ── Project paths ────────────────────────────────
+DESIGN_DIR := asic
+CONFIG     := $(DESIGN_DIR)/config.json
+
+# ── RTL sources (order matters: package first) ───
+RTL_SRC := rtl/isa_defs_pkg.sv rtl/alu.sv rtl/regfile.sv \
            rtl/control_unit.sv rtl/instruction_memory.sv \
            rtl/data_memory.sv rtl/cpu_top.sv
 
-.PHONY: all project sim synth impl bitstream gui reports \
-        yosys-check sv2v gds-setup gds gds-view gds-clean \
-        iverilog-sim lint clean
+# ── OpenLane flags ───────────────────────────────
+OL_FLAGS := --manual-pdk --pdk-root $(PDK_ROOT) -p $(PDK) --run-tag $(TAG)
 
-# ──────────────────────────────────────────────
-#  FPGA flow  (Vivado)
-# ──────────────────────────────────────────────
+.PHONY: all help sv2v synth floorplan placement cts routing gds \
+        gds-view yosys-check iverilog-sim lint \
+        report-synth report-floorplan report-cts report-routing report-timing \
+        clean gds-clean
 
-## Full FPGA build: synthesis -> implementation -> bitstream
-all: bitstream
+all: gds
 
-## Create Vivado project in batch mode
-project: | reports
-	$(VIVADO) -mode batch -source scripts/create_project.tcl -notrace
+# ══════════════════════════════════════════════════
+#  Help
+# ══════════════════════════════════════════════════
 
-## Run behavioural simulation (XSim)
-sim:
-	$(VIVADO) -mode batch -source scripts/run_sim.tcl -notrace
+help:
+	@echo ""
+	@echo "  ASIC flow targets (OpenLane 2 + local PDKs)"
+	@echo "  ────────────────────────────────────────────"
+	@echo "  Current PDK : $(PDK)  (override with PDK=<variant>)"
+	@echo "  PDK_ROOT    : $(PDK_ROOT)"
+	@echo ""
+	@echo "  Preparation:"
+	@echo "    sv2v            Convert SystemVerilog to Verilog (sv2v)"
+	@echo "    yosys-check     Quick Yosys synthesis sanity check"
+	@echo "    lint            Lint with Verilator"
+	@echo ""
+	@echo "  ASIC flow (cumulative — each target runs all prior stages):"
+	@echo "    synth           Synthesis + STA pre-PNR"
+	@echo "    floorplan       Synthesis → Floorplan + PDN generation"
+	@echo "    placement       Synthesis → Detailed placement"
+	@echo "    cts             Synthesis → Clock tree synthesis"
+	@echo "    routing         Synthesis → Detailed routing"
+	@echo "    gds             Full RTL-to-GDS (default target)"
+	@echo ""
+	@echo "  Viewing & reports:"
+	@echo "    gds-view        Open final GDS in KLayout"
+	@echo "    report-synth    Show synthesis timing report"
+	@echo "    report-cts      Show CTS timing report"
+	@echo "    report-routing  Show routing timing report"
+	@echo "    report-timing   Show signoff STA report"
+	@echo ""
+	@echo "  Simulation (open-source):"
+	@echo "    iverilog-sim     Compile & run with Icarus Verilog"
+	@echo ""
+	@echo "  Cleanup:"
+	@echo "    gds-clean       Remove ASIC run outputs"
+	@echo "    clean           Remove all generated files"
+	@echo ""
+	@echo "  Examples:"
+	@echo "    make gds PDK=sky130A"
+	@echo "    make synth PDK=gf180mcuD"
+	@echo "    make cts PDK=sky130A TAG=experiment1"
+	@echo ""
 
-## Run synthesis
-synth: | reports
-	$(VIVADO) -mode batch -source scripts/run_synth.tcl -notrace
+# ══════════════════════════════════════════════════
+#  Preparation
+# ══════════════════════════════════════════════════
 
-## Run implementation (place & route)
-impl: | reports
-	$(VIVADO) -mode batch -source scripts/run_impl.tcl -notrace
-
-## Generate bitstream
-bitstream: | reports
-	$(VIVADO) -mode batch -source scripts/run_bitstream.tcl -notrace
-
-## Open the project in Vivado GUI
-gui:
-	$(VIVADO) $(PROJ).xpr &
-
-## Create reports directory
-reports:
-	mkdir -p reports
-
-# ──────────────────────────────────────────────
-#  ASIC flow  (sv2v + OpenLane classic / Sky130)
-# ──────────────────────────────────────────────
-
-## Convert SystemVerilog to plain Verilog (sv2v)
 build/cpu_top.v: $(RTL_SRC)
 	mkdir -p build
 	sv2v $(RTL_SRC) > $@
 
 sv2v: build/cpu_top.v
 
-## Copy converted Verilog into OpenLane design directory
-asic/src/cpu_top.v: build/cpu_top.v
+$(DESIGN_DIR)/src/cpu_top.v: build/cpu_top.v
+	mkdir -p $(DESIGN_DIR)/src
 	cp $< $@
 
-## Quick local synthesis sanity-check with Yosys (small memories)
 yosys-check: build/cpu_top.v
-	yosys -p 'read_verilog build/cpu_top.v; chparam -set IMEM_DEPTH 16 cpu_top; chparam -set DMEM_DEPTH 16 cpu_top; synth -top cpu_top -flatten; stat'
+	yosys -p 'read_verilog build/cpu_top.v; \
+	  chparam -set IMEM_DEPTH 16 cpu_top; \
+	  chparam -set DMEM_DEPTH 16 cpu_top; \
+	  synth -top cpu_top -flatten; stat'
 
-## Pull OpenLane Docker image and fetch Sky130 PDK (one-time)
-gds-setup:
-	docker pull $(OL_IMG)
-	docker run --rm -v openlane_pdk:/root/.volare $(OL_IMG) \
-	  volare fetch --pdk sky130 bdc9412b3e468c102d01b7cf6337be06ec6e9c9a
+# ══════════════════════════════════════════════════
+#  ASIC flow stages (OpenLane 2 — Classic flow)
+# ══════════════════════════════════════════════════
 
-## Run full RTL-to-GDS flow via OpenLane classic
-gds: asic/src/cpu_top.v
-	docker run --rm \
-	  -v openlane_pdk:/root/.volare \
-	  -v $(CURDIR)/asic:/design \
-	  $(OL_IMG) \
-	  flow.tcl -design /design -tag run
+synth: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Synthesis (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.STAPrePNR $(CONFIG)
 
-## Open final GDS in KLayout
+floorplan: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Floorplan + PDN (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.GeneratePDN $(CONFIG)
+
+placement: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Placement (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.DetailedPlacement $(CONFIG)
+
+cts: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Clock Tree Synthesis (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.ResizerTimingPostCTS $(CONFIG)
+
+routing: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Routing (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.DetailedRouting $(CONFIG)
+
+gds: $(DESIGN_DIR)/src/cpu_top.v
+	@echo "═══ Full RTL-to-GDS (PDK=$(PDK)) ═══"
+	$(OPENLANE) $(OL_FLAGS) $(CONFIG)
+
+# ══════════════════════════════════════════════════
+#  Viewing & reports
+# ══════════════════════════════════════════════════
+
 gds-view:
-	@gds=$$(find asic/runs -path "*/results/final/gds/*.gds" 2>/dev/null | head -1); \
-	if [ -z "$$gds" ]; then echo "No GDS found. Run 'make gds' first."; exit 1; fi; \
-	echo "Opening $$gds"; \
+	@gds=$$(find $(DESIGN_DIR)/runs/$(TAG) -path "*/results/final/gds/*.gds" 2>/dev/null | head -1); \
+	if [ -z "$$gds" ]; then \
+		echo "No GDS found for tag '$(TAG)'. Run 'make gds' first."; exit 1; \
+	fi; \
+	echo "Opening $$gds in KLayout"; \
 	klayout "$$gds" &
 
-# ──────────────────────────────────────────────
-#  Open-source simulation & lint
-# ──────────────────────────────────────────────
+report-synth:
+	@find $(DESIGN_DIR)/runs/$(TAG)/reports/synthesis -name "*.rpt" 2>/dev/null | sort | \
+	while read f; do echo "\n═══ $$f ═══"; cat "$$f"; done || \
+	echo "No synthesis reports found. Run 'make synth' first."
 
-## Compile & run with Icarus Verilog
+report-cts:
+	@find $(DESIGN_DIR)/runs/$(TAG)/reports/cts -name "*.rpt" 2>/dev/null | sort | \
+	while read f; do echo "\n═══ $$f ═══"; cat "$$f"; done || \
+	echo "No CTS reports found. Run 'make cts' first."
+
+report-routing:
+	@find $(DESIGN_DIR)/runs/$(TAG)/reports/routing -name "*.rpt" 2>/dev/null | sort | \
+	while read f; do echo "\n═══ $$f ═══"; cat "$$f"; done || \
+	echo "No routing reports found. Run 'make routing' first."
+
+report-timing:
+	@find $(DESIGN_DIR)/runs/$(TAG)/reports/signoff -name "*.rpt" 2>/dev/null | sort | \
+	while read f; do echo "\n═══ $$f ═══"; cat "$$f"; done || \
+	echo "No signoff reports found. Run 'make gds' first."
+
+# ══════════════════════════════════════════════════
+#  Open-source simulation & lint
+# ══════════════════════════════════════════════════
+
 iverilog-sim: build/cpu_top.v
 	iverilog -g2012 -s top_tb -o build/cpu_tb.vvp \
 	  build/cpu_top.v tb/top_tb.sv
 	vvp build/cpu_tb.vvp
 
-## Lint with Verilator
 lint:
 	verilator --lint-only -Wall --top-module cpu_top $(RTL_SRC)
 
-# ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════
 #  Cleanup
-# ──────────────────────────────────────────────
+# ══════════════════════════════════════════════════
 
-## Remove ASIC outputs
 gds-clean:
-	rm -rf asic/runs asic/src/cpu_top.v
+	rm -rf $(DESIGN_DIR)/runs $(DESIGN_DIR)/src/cpu_top.v
 
-## Remove all generated files
 clean: gds-clean
-	rm -rf $(PROJ).xpr $(PROJ).runs $(PROJ).cache $(PROJ).srcs \
-	       $(PROJ).sim $(PROJ).hw $(PROJ).ip_user_files \
-	       .Xil *.jou *.log *.str xsim.dir work reports build
+	rm -rf build reports .Xil *.jou *.log *.str
