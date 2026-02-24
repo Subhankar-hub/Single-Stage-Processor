@@ -16,8 +16,24 @@
 # ── User-configurable variables ──────────────────
 PDK        ?= sky130A
 PDK_ROOT   ?= /home/smith/asic/pdks
-OPENLANE   := /home/smith/asic/bin/openlane
 TAG        ?= run
+
+# ── Nix / OpenLane invocation ───────────────────────
+OL2_FLAKE  ?= /home/smith/Desktop/project/openlane2
+NIX_FLAGS  ?= --extra-experimental-features "nix-command flakes"
+
+# In local development, use Nix by default. In CI, fall back to a
+# plain OpenLane binary unless NIX_RUN is explicitly provided.
+ifeq ($(origin NIX_RUN), undefined)
+  ifeq ($(CI),true)
+    NIX_RUN :=
+  else
+    NIX_RUN := nix $(NIX_FLAGS) develop $(OL2_FLAKE) --command
+  endif
+endif
+
+OPENLANE_BIN ?= openlane
+OL_RUN       := $(NIX_RUN) $(OPENLANE_BIN)
 
 # ── Project paths ────────────────────────────────
 DESIGN_DIR := asic
@@ -29,7 +45,7 @@ RTL_SRC := rtl/isa_defs_pkg.sv rtl/alu.sv rtl/regfile.sv \
            rtl/data_memory.sv rtl/cpu_top.sv
 
 # ── OpenLane flags ───────────────────────────────
-OL_FLAGS := --manual-pdk --pdk-root $(PDK_ROOT) -p $(PDK) --run-tag $(TAG)
+OL_FLAGS := --pdk-root $(PDK_ROOT) -p $(PDK) --run-tag $(TAG)
 
 .PHONY: all help sv2v synth floorplan placement cts routing gds \
         gds-view yosys-check iverilog-sim lint \
@@ -48,6 +64,7 @@ help:
 	@echo "  ────────────────────────────────────────────"
 	@echo "  Current PDK : $(PDK)  (override with PDK=<variant>)"
 	@echo "  PDK_ROOT    : $(PDK_ROOT)"
+	@echo "  Toolchain   : nix develop $(OL2_FLAKE)"
 	@echo ""
 	@echo "  Preparation:"
 	@echo "    sv2v            Convert SystemVerilog to Verilog (sv2v)"
@@ -108,27 +125,27 @@ yosys-check: build/cpu_top.v
 
 synth: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Synthesis (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.STAPrePNR $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) --to OpenROAD.STAPrePNR $(CONFIG)
 
 floorplan: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Floorplan + PDN (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.GeneratePDN $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) --to OpenROAD.GeneratePDN $(CONFIG)
 
 placement: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Placement (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.DetailedPlacement $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) --to OpenROAD.DetailedPlacement $(CONFIG)
 
 cts: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Clock Tree Synthesis (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.ResizerTimingPostCTS $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) --to OpenROAD.ResizerTimingPostCTS $(CONFIG)
 
 routing: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Routing (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) --to OpenROAD.DetailedRouting $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) --to OpenROAD.DetailedRouting $(CONFIG)
 
 gds: $(DESIGN_DIR)/src/cpu_top.v
 	@echo "═══ Full RTL-to-GDS (PDK=$(PDK)) ═══"
-	$(OPENLANE) $(OL_FLAGS) $(CONFIG)
+	$(OL_RUN) $(OL_FLAGS) $(CONFIG)
 
 # ══════════════════════════════════════════════════
 #  Viewing & reports

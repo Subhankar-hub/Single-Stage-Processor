@@ -102,22 +102,15 @@ jobs:
             --pdk-root .pdk_root \
             ${{ env.OPDKS_REV }}
 
-      - name: Convert SystemVerilog to Verilog
-        run: make sv2v
-
-      - name: Copy Verilog to ASIC design directory
+      - name: Run OpenLane 2 flow via Makefile
+        env:
+          CI: "true"
+          PDK_ROOT: ${{ github.workspace }}/.pdk_root
+          OPENLANE_BIN: ${{ github.workspace }}/.venv/bin/openlane
+          PDK: ${{ env.PDK }}
+          TAG: run
         run: |
-          mkdir -p asic/src
-          cp build/cpu_top.v asic/src/cpu_top.v
-
-      - name: Run OpenLane 2 flow
-        run: |
-          .venv/bin/openlane \
-            --manual-pdk \
-            --pdk-root .pdk_root \
-            -p ${{ env.PDK }} \
-            --run-tag run \
-            asic/config.json
+          make gds
 
       - name: Print flow summary
         if: always()
