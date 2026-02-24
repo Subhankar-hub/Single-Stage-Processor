@@ -36,9 +36,11 @@ jobs:
 
       - name: Install tools
         run: |
-          sudo apt-get update && sudo apt-get install -y yosys verilator
-          curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
-            | tar xz --strip-components=1 -C /usr/local/bin
+          sudo apt-get update
+          sudo apt-get install -y yosys verilator unzip
+          curl -sL https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip -o /tmp/sv2v-Linux.zip
+          sudo unzip -j /tmp/sv2v-Linux.zip -d /usr/local/bin
+          sudo chmod +x /usr/local/bin/sv2v
 
       - name: Lint
         run: make lint
@@ -59,7 +61,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip
+          sudo apt-get install -y python3-pip unzip
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -71,8 +73,9 @@ jobs:
 
       - name: Install sv2v
         run: |
-          curl -sL https://github.com/zachjs/sv2v/releases/latest/download/sv2v-Linux-x86_64.tar.gz \
-            | tar xz --strip-components=1 -C /usr/local/bin
+          curl -sL https://github.com/zachjs/sv2v/releases/download/v0.0.13/sv2v-Linux.zip -o /tmp/sv2v-Linux.zip
+          sudo unzip -j /tmp/sv2v-Linux.zip -d /usr/local/bin
+          sudo chmod +x /usr/local/bin/sv2v
 
       - name: Resolve PDK family for volare
         id: pdk-family
