@@ -59,7 +59,7 @@ jobs:
       # Cache location for volare-managed PDKs
       PDK_ROOT: ${{ github.workspace }}/.pdk_root
       # Use OpenLane2 GitHub repo via Nix flakes for CI
-      NIX_RUN: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop github:The-OpenROAD-Project/OpenLane2 --command
+      NIX_RUN: nix --extra-experimental-features nix-command --extra-experimental-features flakes develop github:chipfoundry/openlane2 --command
     steps:
       - uses: actions/checkout@v4
 
