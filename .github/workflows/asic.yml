@@ -55,21 +55,21 @@ jobs:
     name: "OpenLane 2 RTL-to-GDS (${{ github.event.inputs.pdk || 'sky130A' }})"
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      # Cache location for volare-managed PDKs
+      PDK_ROOT: ${{ github.workspace }}/.pdk_root
+      # Use OpenLane2 GitHub repo via Nix flakes for CI
+      NIX_RUN: nix --extra-experimental-features "nix-command flakes" develop github:The-OpenROAD-Project/OpenLane2 --command
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip python3-tk unzip
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Set up Python venv & install OpenLane
-        run: |
-          uv venv .venv --python 3.12
-          uv pip install openlane==${{ env.OPENLANE_VERSION }} --python .venv/bin/python
+          sudo apt-get install -y unzip
 
       - name: Install sv2v
         run: |
@@ -100,7 +100,7 @@ jobs:
       - name: Fetch PDK via volare
         if: steps.cache-pdk.outputs.cache-hit != 'true'
         run: |
-          .venv/bin/volare enable \
+          $NIX_RUN volare enable \
             --pdk ${{ steps.pdk-family.outputs.family }} \
             --pdk-root .pdk_root \
             ${{ env.OPDKS_REV }}
@@ -108,8 +108,6 @@ jobs:
       - name: Run OpenLane 2 flow via Makefile
         env:
           CI: "true"
-          PDK_ROOT: ${{ github.workspace }}/.pdk_root
-          OPENLANE_BIN: ${{ github.workspace }}/.venv/bin/openlane
           PDK: ${{ env.PDK }}
           TAG: run
         run: |
