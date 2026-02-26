@@ -114,10 +114,7 @@ $(DESIGN_DIR)/src/cpu_top.v: build/cpu_top.v
 	cp $< $@
 
 yosys-check: build/cpu_top.v
-	yosys -p 'read_verilog build/cpu_top.v; \
-	  chparam -set IMEM_DEPTH 16 cpu_top; \
-	  chparam -set DMEM_DEPTH 16 cpu_top; \
-	  synth -top cpu_top -flatten; stat'
+	yosys -p 'read_verilog build/cpu_top.v; chparam -set IMEM_DEPTH 16 cpu_top; chparam -set DMEM_DEPTH 16 cpu_top; synth -top cpu_top -flatten; stat'
 
 # ══════════════════════════════════════════════════
 #  ASIC flow stages (OpenLane 2 — Classic flow)
